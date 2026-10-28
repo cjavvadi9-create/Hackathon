@@ -128,8 +128,7 @@ export const EXPECTED_HEADERS: Record<DatasetKind, string[]> = {
   orders: ["order_id", "sku_id", "quantity", "timestamp"],
 };
 
-const STORAGE_KEY = "optistore-e1-run";
-const DATA_STORAGE_KEY = "optistore-e1-datasets";
+const LEGACY_DATA_STORAGE_KEY = "optistore-e1-datasets";
 
 const sampleNames = ["phone case", "cable pack", "screen guard", "desk lamp", "power strip", "usb hub", "keyboard", "mouse", "webcam", "charger", "notebook", "label roll"];
 
@@ -442,7 +441,7 @@ export function computeObjective(
   const cooccurrenceCost = totalPairFrequency > 0 ? totalCooccurrence / (totalPairFrequency * maxPairDistance) : 0;
   const objective = parameters.travelWeight * routeCost + parameters.demandWeight * demandCost + parameters.cooccurrenceWeight * cooccurrenceCost;
 
-  return Number(objective.toFixed(4));
+  return objective;
 }
 
 /**
@@ -529,7 +528,6 @@ export function optimizeLocalSearch(
         if (newObjective < bestObjective - 1e-9) {
           // Accept improvement
           bestObjective = newObjective;
-          bestAssignments = assignments.map((a) => ({ ...a }));
           swapsAccepted++;
           improvedInPass = true;
           // Update reasons
@@ -539,6 +537,8 @@ export function optimizeLocalSearch(
           aj.reason = `Local search swap${partnerJ ? ` · co-pick affinity with ${partnerJ}` : ` · ${skuJ.storage_class} zone`}`;
           ai.score = Number(Math.max(0.5, 1 - travelDistance(locJ) / 100).toFixed(2));
           aj.score = Number(Math.max(0.5, 1 - travelDistance(locI) / 100).toFixed(2));
+          // Snapshot only after all assignment metadata matches the accepted locations.
+          bestAssignments = assignments.map((a) => ({ ...a }));
         } else {
           // Revert swap
           ai.location_id = origLocI;
@@ -741,7 +741,7 @@ export function runBenchmark(
       algorithmName: baselineReport.valid ? "Deterministic randomized feasible baseline" : "Deterministic randomized baseline (infeasible input)",
       totalDistance: greedyRun.baseline.totalDistance,
       averageDistance: greedyRun.baseline.averageDistance,
-      objective: baselineObj,
+      objective: Number(baselineObj.toFixed(4)),
       runtimeMs: 0,
       assignments: greedyRun.baseline.validAssignments,
       constraintViolations: baselineReport.failed,
@@ -754,7 +754,7 @@ export function runBenchmark(
       algorithmName: "Demand + co-occurrence greedy heuristic",
       totalDistance: greedyRun.optimized.totalDistance,
       averageDistance: greedyRun.optimized.averageDistance,
-      objective: greedyObj,
+      objective: Number(greedyObj.toFixed(4)),
       runtimeMs: greedyTime,
       assignments: greedyRun.optimized.validAssignments,
       constraintViolations: greedyRun.optimized.constraintViolations,
@@ -765,7 +765,7 @@ export function runBenchmark(
       algorithmName: "Greedy + local search (pairwise swap)",
       totalDistance: lsRun.optimized.totalDistance,
       averageDistance: lsRun.optimized.averageDistance,
-      objective: lsObj,
+      objective: Number(lsObj.toFixed(4)),
       runtimeMs: lsTime,
       assignments: lsRun.optimized.validAssignments,
       constraintViolations: lsRun.optimized.constraintViolations,
@@ -1002,10 +1002,18 @@ export function getOrderIds(data: DatasetBundle): string[] {
   return [...new Set(data.orders.map((o) => o.order_id))];
 }
 
-export function saveData(data: DatasetBundle) { try { localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(data)); } catch { /* storage may be unavailable */ } }
-export function loadData(): DatasetBundle | null { try { const value = localStorage.getItem(DATA_STORAGE_KEY); return value ? JSON.parse(value) as DatasetBundle : null; } catch { return null; } }
-export function saveRun(run: OptimizationRun) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(run)); } catch { /* storage may be unavailable */ } }
-export function loadRun(): OptimizationRun | null { try { const value = localStorage.getItem(STORAGE_KEY); return value ? JSON.parse(value) as OptimizationRun : null; } catch { return null; } }
-export function clearRun() { try { localStorage.removeItem(STORAGE_KEY); } catch { /* storage may be unavailable */ } }
+/** Read-only compatibility path for an explicit user-initiated legacy import. */
+export function loadLegacyDataset(): DatasetBundle | null {
+  try {
+    const value = localStorage.getItem(LEGACY_DATA_STORAGE_KEY);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as Partial<DatasetBundle>;
+    return Array.isArray(parsed.layout) && Array.isArray(parsed.skus) && Array.isArray(parsed.orders)
+      ? parsed as DatasetBundle
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 export function downloadText(filename: string, content: string, type = "text/csv") { const blob = new Blob([content], { type }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url); }

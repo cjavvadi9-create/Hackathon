@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -41,7 +41,6 @@ import {
   type ValidationReport,
   type BenchmarkResult,
   assignmentCsv,
-  clearRun,
   computeOrderRoute,
   datasetCsv,
   downloadText,
@@ -49,22 +48,21 @@ import {
   exportEvaluationReportCsv,
   exportRunCsv,
   getOrderIds,
-  loadData,
-  loadRun,
+  loadLegacyDataset,
   makeSampleData,
   metricDelta,
   optimize,
   optimizeLocalSearch,
   parseDatasetCsv,
   runBenchmark,
-  saveData,
-  saveRun,
   validateDataset,
 } from "@/lib/optimizer";
+import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { startLogin } from "@/const";
+import { apiQueryState, createOptimizationInput, createWarehouseAndRefresh, importAndRefresh, latestCompletedRunId, runAndRefresh, runsOnBackend, trpcErrorMessage, workspaceSourceLabel } from "@/lib/workspace";
 
-const initialData = loadData() ?? makeSampleData();
-const currentDatasetVersion = `synthetic-e1-v3-${initialData.layout.length}x${initialData.skus.length}x${initialData.orders.length}`;
-
+const demoData = makeSampleData();
 const stages = [
   ["Validate schemas + references", "No missing IDs, duplicates, or physical errors"],
   ["Calculate demand + co-occurrence", "120 orders replayed across 36 SKUs"],
@@ -183,18 +181,50 @@ function DataHealth({ report }: { report: ValidationReport }) {
 }
 
 export default function Home() {
-  const [data, setData] = useState<DatasetBundle>(() => {
-    saveData(initialData);
-    return initialData;
+  const auth = useAuth();
+  const api = trpc.useUtils();
+  const [data, setData] = useState<DatasetBundle>(demoData);
+  const [dataSource, setDataSource] = useState<"demo" | "draft" | "persisted">("demo");
+  const [localDatasetAvailable, setLocalDatasetAvailable] = useState(() => Boolean(loadLegacyDataset()));
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | null>(null);
+  const [selectedDatasetVersionId, setSelectedDatasetVersionId] = useState<number | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [warehouseName, setWarehouseName] = useState("");
+  const lastVersionsWarehouseId = useRef<number | null>(null);
+
+  const warehousesQuery = trpc.warehouses.list.useQuery(undefined, {
+    enabled: auth.isAuthenticated,
+    retry: false,
   });
+  const warehouseDetailQuery = trpc.warehouses.get.useQuery(
+    { warehouseId: selectedWarehouseId ?? 1 },
+    { enabled: auth.isAuthenticated && selectedWarehouseId !== null, retry: false },
+  );
+  const versionsQuery = trpc.datasets.listVersions.useQuery(
+    { warehouseId: selectedWarehouseId ?? 1 },
+    { enabled: auth.isAuthenticated && selectedWarehouseId !== null, retry: false },
+  );
+  const datasetQuery = trpc.datasets.getVersion.useQuery(
+    { datasetVersionId: selectedDatasetVersionId ?? 1 },
+    { enabled: auth.isAuthenticated && selectedDatasetVersionId !== null, retry: false },
+  );
+  const runHistoryQuery = trpc.optimization.list.useQuery(
+    { datasetVersionId: selectedDatasetVersionId ?? undefined, limit: 25 },
+    { enabled: auth.isAuthenticated && selectedDatasetVersionId !== null, retry: false },
+  );
+  const selectedRunQuery = trpc.optimization.get.useQuery(
+    { runId: selectedRunId ?? 1 },
+    { enabled: auth.isAuthenticated && selectedRunId !== null, retry: false },
+  );
+  const createWarehouseMutation = trpc.warehouses.create.useMutation();
+  const importDatasetMutation = trpc.datasets.importBundle.useMutation();
+  const runOptimizationMutation = trpc.optimization.run.useMutation();
 
   const [selectedAlgo, setSelectedAlgo] = useState<"greedy" | "local_search">("local_search");
   const [maxIterations, setMaxIterations] = useState(500);
 
   const [run, setRun] = useState<OptimizationRun | null>(() => {
-    const stored = loadRun();
-    if (stored?.datasetVersion === currentDatasetVersion) return stored;
-    const generated = optimizeLocalSearch(initialData, {
+    const generated = optimizeLocalSearch(demoData, {
       travelWeight: 0.55,
       demandWeight: 0.2,
       cooccurrenceWeight: 0.25,
@@ -202,13 +232,12 @@ export default function Home() {
       seed: 42,
       maxIterations: 500,
     });
-    saveRun(generated);
     return generated;
   });
 
   const [benchmark, setBenchmark] = useState<ReturnType<typeof runBenchmark> | null>(() => {
     try {
-      return runBenchmark(initialData);
+      return runBenchmark(demoData);
     } catch {
       return null;
     }
@@ -227,13 +256,60 @@ export default function Home() {
   const [selectedOrderId, setSelectedOrderId] = useState<string>(() => orderIds[0] ?? "ORD-80001");
 
   const [notice, setNotice] = useState(
-    "Evaluation 1 live solver ready. Both Greedy heuristic and Greedy + Local Search algorithms are available."
+    "Synthetic demo data is ready for local exploration. Sign in and save a dataset version to run optimization on the server."
   );
   const [weights, setWeights] = useState({
     travelWeight: 0.55,
     demandWeight: 0.2,
     cooccurrenceWeight: 0.25,
   });
+
+  useEffect(() => {
+    if (selectedWarehouseId !== null || !warehousesQuery.data?.length) return;
+    setSelectedWarehouseId(warehousesQuery.data[0]!.id);
+  }, [selectedWarehouseId, warehousesQuery.data]);
+
+  useEffect(() => {
+    if (!selectedWarehouseId || !versionsQuery.data) return;
+    if (lastVersionsWarehouseId.current === selectedWarehouseId) return;
+    lastVersionsWarehouseId.current = selectedWarehouseId;
+    const latest = versionsQuery.data[0];
+    setSelectedDatasetVersionId(latest?.id ?? null);
+    setSelectedRunId(null);
+    if (!latest) {
+      setData(demoData);
+      setDataSource("demo");
+      setRun(null);
+      setBenchmark(null);
+    }
+  }, [selectedWarehouseId, selectedDatasetVersionId, versionsQuery.data]);
+
+  useEffect(() => {
+    const saved = datasetQuery.data;
+    if (!saved || saved.id !== selectedDatasetVersionId) return;
+    setData(saved.data);
+    setDataSource("persisted");
+    setRun(null);
+    setBenchmark(null);
+  }, [datasetQuery.data, selectedDatasetVersionId]);
+
+  useEffect(() => {
+    const latestSuccessId = latestCompletedRunId(runHistoryQuery.data);
+    if (selectedRunId === null && latestSuccessId !== null) setSelectedRunId(latestSuccessId);
+  }, [runHistoryQuery.data, selectedRunId]);
+
+  useEffect(() => {
+    const savedRun = selectedRunQuery.data;
+    if (!savedRun || savedRun.id !== selectedRunId || savedRun.datasetVersionId !== selectedDatasetVersionId || datasetQuery.data?.id !== selectedDatasetVersionId || savedRun.status !== "succeeded" || !savedRun.result) return;
+    setRun(savedRun.result);
+  }, [selectedRunQuery.data, selectedRunId, selectedDatasetVersionId, datasetQuery.data]);
+
+  useEffect(() => {
+    if (orderIds.length && !orderIds.includes(selectedOrderId)) setSelectedOrderId(orderIds[0]!);
+    if (data.layout.length && !data.layout.some((location) => location.location_id === selectedLocation)) {
+      setSelectedLocation(data.layout[0]!.location_id);
+    }
+  }, [data, orderIds, selectedLocation, selectedOrderId]);
 
   const fileInputs = {
     layout: useRef<HTMLInputElement>(null),
@@ -282,64 +358,56 @@ export default function Home() {
   const skuRows = data.skus.slice(0, 8);
   const orderRows = data.orders.slice(0, 8);
 
-  const handleRun = () => {
+  const handleRun = async () => {
     setNotice("");
     setRunning(true);
     setStageIndex(0);
     let current = 0;
     const timer = window.setInterval(() => {
-      current += 1;
+      current = Math.min(current + 1, stages.length - 1);
       setStageIndex(current);
-      if (current >= stages.length - 1) {
-        window.clearInterval(timer);
-        window.setTimeout(() => {
-          try {
-            const nextRun =
-              selectedAlgo === "local_search"
-                ? optimizeLocalSearch(data, {
-                    ...weights,
-                    timeLimitMs: 2000,
-                    seed: 42,
-                    maxIterations,
-                  })
-                : optimize(data, {
-                    ...weights,
-                    timeLimitMs: 1000,
-                    seed: 42,
-                  });
-
-            setRun(nextRun);
-            saveRun(nextRun);
-
-            // Also update benchmark if running
-            try {
-              const b = runBenchmark(data, {
-                ...weights,
-                timeLimitMs: 3000,
-                seed: 42,
-                maxIterations,
-              });
-              setBenchmark(b);
-            } catch {
-              // ignore
-            }
-
-            setNotice(
-              `Optimization complete using ${nextRun.algorithm}. ${nextRun.runtimeMs ? `Solved in ${nextRun.runtimeMs}ms.` : ""} Feasibility score: ${nextRun.validation.passed}/${nextRun.validation.checks} checks passed.`
-            );
-          } catch (error) {
-            setNotice(
-              error instanceof Error ? error.message : "Optimization failed. Check the validation report."
-            );
-          } finally {
-            setRunning(false);
-          }
-        }, 450);
-      }
     }, 450);
+    try {
+      let nextRun: OptimizationRun;
+      if (runsOnBackend(dataSource)) {
+        if (selectedDatasetVersionId === null || !auth.isAuthenticated) {
+          throw new Error("Select a saved dataset version and sign in before running the server optimizer.");
+        }
+        const { response: persisted, result: persistedResult, refreshError } = await runAndRefresh(
+          (input) => runOptimizationMutation.mutateAsync(input),
+          () => runHistoryQuery.refetch({ throwOnError: true }),
+          createOptimizationInput(selectedDatasetVersionId, selectedAlgo, weights, maxIterations),
+        );
+        nextRun = persistedResult;
+        setSelectedRunId(persisted.id);
+        setBenchmark(null);
+        setNotice(`Server optimization saved as run ${persisted.id}. ${nextRun.validation.passed}/${nextRun.validation.checks} validation checks passed.${refreshError ? " The run history refresh failed; the completed result is still shown." : ""}`);
+      } else {
+        nextRun = selectedAlgo === "local_search"
+          ? optimizeLocalSearch(data, { ...weights, timeLimitMs: 2000, seed: 42, maxIterations })
+          : optimize(data, { ...weights, timeLimitMs: 1000, seed: 42 });
+        try {
+          setBenchmark(runBenchmark(data, { ...weights, timeLimitMs: 3000, seed: 42, maxIterations }));
+        } catch {
+          setBenchmark(null);
+        }
+        setNotice(`Local ${dataSource === "demo" ? "demo" : "draft"} optimization complete using ${nextRun.algorithm}. ${nextRun.runtimeMs ?? 0}ms; ${nextRun.validation.passed}/${nextRun.validation.checks} validation checks passed. This run is not saved to the backend.`);
+      }
+      setRun(nextRun);
+      setStageIndex(stages.length - 1);
+    } catch (error) {
+      setNotice(trpcErrorMessage(error, "Optimization failed. Your selected dataset is still available."));
+    } finally {
+      window.clearInterval(timer);
+      setRunning(false);
+    }
   };
 
   const handleRunBenchmark = () => {
+    if (dataSource === "persisted") {
+      setNotice("Benchmarking is currently available in local demo or draft mode; persisted benchmark APIs are not implemented yet.");
+      return;
+    }
     setBenchmarkRunning(true);
     window.setTimeout(() => {
       try {
@@ -350,9 +418,7 @@ export default function Home() {
           maxIterations,
         });
         setBenchmark(b);
-        setNotice(
-          `Head-to-head benchmark completed. Greedy runtime: ${b.greedy.runtimeMs}ms vs Local Search runtime: ${b.localSearch.runtimeMs}ms.`
-        );
+        setNotice(`Local ${dataSource === "demo" ? "demo" : "draft"} head-to-head benchmark completed. Greedy runtime: ${b.greedy.runtimeMs}ms vs Local Search runtime: ${b.localSearch.runtimeMs}ms. This benchmark is not saved to the backend.`);
       } catch (err) {
         setNotice(err instanceof Error ? err.message : "Benchmark failed.");
       } finally {
@@ -364,6 +430,7 @@ export default function Home() {
   const handleUpload = async (kind: DatasetKind, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    try {
     const parsed = parseDatasetCsv(kind, await file.text());
     if (!parsed.data || !parsed.report.valid) {
       setNotice(
@@ -373,13 +440,107 @@ export default function Home() {
     }
     const nextData = { ...data, [kind === "sku" ? "skus" : kind]: parsed.data } as DatasetBundle;
     setData(nextData);
-    saveData(nextData);
-    clearRun();
+    setDataSource("draft");
+    setSelectedDatasetVersionId(null);
+    setSelectedRunId(null);
     setRun(null);
     setBenchmark(null);
     setActiveDataset(kind);
-    setNotice(`${file.name} accepted. Validate all three datasets, then run optimization again.`);
-    event.target.value = "";
+    setNotice(`${file.name} parsed into a local draft. Select a warehouse and save the complete validated dataset to persist it.`);
+    } catch (error) {
+      setNotice(trpcErrorMessage(error, `Unable to read ${kind} CSV.`));
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handleCreateWarehouse = async () => {
+    const name = warehouseName.trim();
+    if (!name) return;
+    try {
+      const { value: created, refreshError } = await createWarehouseAndRefresh(
+        (input) => createWarehouseMutation.mutateAsync(input),
+        () => warehousesQuery.refetch(),
+        { name },
+      );
+      setWarehouseName("");
+      setSelectedWarehouseId(created.id);
+      setSelectedDatasetVersionId(null);
+      setSelectedRunId(null);
+      setData(demoData);
+      setDataSource("demo");
+      setRun(null);
+      setBenchmark(null);
+      setNotice(`Warehouse “${created.name}” created.${refreshError ? " The warehouse list could not refresh yet." : ""}`);
+    } catch (error) {
+      setNotice(trpcErrorMessage(error, "Unable to create the warehouse."));
+    }
+  };
+
+  const handleSaveDataset = async () => {
+    if (!auth.isAuthenticated) {
+      setNotice("Sign in to save a dataset. Demo and draft data remain available locally.");
+      return;
+    }
+    if (selectedWarehouseId === null) {
+      setNotice("Create or select a warehouse before saving this dataset.");
+      return;
+    }
+    if (!validation.valid) {
+      const messages = validation.issues.filter((issue) => issue.severity === "error").slice(0, 3).map((issue) => issue.message);
+      setNotice(`Dataset was not saved: ${messages.join(" · ") || "validation failed"}`);
+      return;
+    }
+    try {
+      const { value: saved, refreshError } = await importAndRefresh(
+        (input) => importDatasetMutation.mutateAsync(input),
+        async () => { await Promise.all([versionsQuery.refetch(), api.datasets.listVersions.invalidate()]); },
+        { warehouseId: selectedWarehouseId, source: dataSource === "demo" ? "sample" as const : "csv" as const, data },
+      );
+      setSelectedDatasetVersionId(saved.id);
+      setSelectedRunId(null);
+      setData(saved.data);
+      setDataSource("persisted");
+      setRun(null);
+      setBenchmark(null);
+      setNotice(`Dataset version ${saved.versionNumber} saved by the server (${saved.layoutCount} locations, ${saved.skuCount} SKUs, ${saved.orderLineCount} order lines).${refreshError ? " The saved version list could not refresh yet." : ""}`);
+    } catch (error) {
+      setNotice(trpcErrorMessage(error, "Dataset save failed. The current draft is still available."));
+    }
+  };
+
+  const handleImportLegacyDataset = () => {
+    try {
+      const saved = loadLegacyDataset();
+      if (!saved) {
+        setLocalDatasetAvailable(false);
+        setNotice("No previous local dataset was found.");
+        return;
+      }
+      const report = validateDataset(saved, true).report;
+      if (!report.valid) {
+        setNotice("The previous local dataset is incomplete or invalid. It was not loaded as a saved dataset.");
+        return;
+      }
+      setData(saved);
+      setDataSource("draft");
+      setSelectedDatasetVersionId(null);
+      setSelectedRunId(null);
+      setRun(null);
+      setBenchmark(null);
+      setNotice("Previous browser data loaded as a draft. Save it to a selected warehouse to create a persistent dataset version.");
+    } catch {
+      setLocalDatasetAvailable(false);
+      setNotice("The previous browser dataset could not be read safely and was not imported.");
+    }
+  };
+
+  const handleSignIn = () => {
+    try {
+      startLogin();
+    } catch (error) {
+      setNotice(trpcErrorMessage(error, "Sign-in is not configured in this environment."));
+    }
   };
 
   const downloadDataset = (kind: DatasetKind) =>
@@ -392,6 +553,11 @@ export default function Home() {
   const travelDelta = run
     ? metricDelta(baselineTravel, optimizedTravel)
     : { absolute: 0, percent: 0 };
+  const warehouseLoadState = apiQueryState({
+    isLoading: auth.loading || warehousesQuery.isLoading,
+    isError: Boolean(warehousesQuery.error || auth.error),
+    hasData: Boolean(warehousesQuery.data?.length),
+  });
 
   return (
     <div className="site-shell">
@@ -413,7 +579,7 @@ export default function Home() {
             ))}
           </nav>
           <div className="header-actions">
-            <StatusPill tone="green">Evaluation 1 live</StatusPill>
+            <StatusPill tone={dataSource === "persisted" ? "green" : "blue"}>{dataSource === "persisted" ? "Server-backed dataset" : dataSource === "draft" ? "Local draft" : "Demo mode"}</StatusPill>
             <button className="header-cta" onClick={() => scrollToId("control")} type="button">
               Open optimizer <ArrowRight size={15} />
             </button>
@@ -461,7 +627,7 @@ export default function Home() {
                 </button>
               </div>
               <div className="hero-footnote">
-                <CheckCircle2 size={15} /> 36 SKUs · 120 orders · 36 locations · Greedy + Local Search
+                <CheckCircle2 size={15} /> {data.skus.length} SKUs · {data.orders.length} order lines · {data.layout.length} locations · Greedy + Local Search
               </div>
             </div>
 
@@ -533,7 +699,7 @@ export default function Home() {
             </div>
           </div>
           <div className="hero-signal page-width">
-            <span>LIVE SYNTHETIC DATA</span>
+            <span>{dataSource === "demo" ? "SYNTHETIC DEMO DATA" : dataSource === "draft" ? "LOCAL DRAFT DATA" : "SAVED BACKEND DATA"}</span>
             <span className="signal-line" />
             <span>
               {data.skus.length} SKUs · {data.orders.length} order lines · {data.layout.length} locations
@@ -599,8 +765,9 @@ export default function Home() {
                   <em>calculated live.</em>
                 </h2>
                 <p>
-                  Deterministic in-browser operations research engine. Evaluated on the identical
-                  120-order sequence with strict physical constraint gates and zero hardcoded figures.
+                  {dataSource === "persisted"
+                    ? "Saved warehouse data; optimization runs execute through the authenticated server API."
+                    : `Deterministic local ${dataSource === "demo" ? "demo" : "draft"} solver with strict physical constraint gates.`}
                 </p>
                 <div className="summary-list">
                   <div>
@@ -680,6 +847,110 @@ export default function Home() {
                 <br />
                 and downloadable templates — no silent assumptions.
               </p>
+            </div>
+            <div className="dataset-panel" style={{ marginBottom: "22px", padding: "18px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                <div>
+                  <span className="toolbar-kicker">DATA SOURCE</span>
+                  <div style={{ marginTop: "7px" }}><StatusPill tone={dataSource === "persisted" ? "green" : dataSource === "draft" ? "orange" : "blue"}>{workspaceSourceLabel(dataSource)}</StatusPill></div>
+                </div>
+                {!auth.isAuthenticated && (
+                  <>
+                    <button className="outline-button compact" onClick={handleSignIn} type="button">Sign in to load saved data</button>
+                    {localDatasetAvailable && dataSource === "demo" && (
+                      <button className="text-button compact-text" onClick={handleImportLegacyDataset} type="button">Load previous browser dataset as draft</button>
+                    )}
+                  </>
+                )}
+                {auth.isAuthenticated && (
+                  <>
+                    <label style={{ display: "grid", gap: "5px", minWidth: "200px" }}>
+                      <span className="toolbar-kicker">WAREHOUSE</span>
+                      <select
+                        className="app-select"
+                        value={selectedWarehouseId ?? ""}
+                        disabled={warehousesQuery.isLoading || warehousesQuery.isError}
+                        onChange={(event) => {
+                          const id = event.target.value ? Number(event.target.value) : null;
+                          setSelectedWarehouseId(id);
+                          setSelectedDatasetVersionId(null);
+                          setSelectedRunId(null);
+                          setRun(null);
+                          setBenchmark(null);
+                          setData(demoData);
+                          setDataSource("demo");
+                        }}
+                      >
+                        <option value="">Select warehouse</option>
+                        {warehousesQuery.data?.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
+                      </select>
+                    </label>
+                    <label style={{ display: "grid", gap: "5px", minWidth: "210px" }}>
+                      <span className="toolbar-kicker">SAVED DATASET VERSION</span>
+                      <select
+                        className="app-select"
+                        value={selectedDatasetVersionId ?? ""}
+                        disabled={!selectedWarehouseId || versionsQuery.isLoading || !(versionsQuery.data?.length)}
+                        onChange={(event) => {
+                          const id = event.target.value ? Number(event.target.value) : null;
+                          setSelectedDatasetVersionId(id);
+                          setSelectedRunId(null);
+                          setRun(null);
+                          setBenchmark(null);
+                          if (id !== null) {
+                            setData(demoData);
+                            setDataSource("persisted");
+                            setNotice("Loading the selected saved dataset version…");
+                          } else if (dataSource === "persisted") {
+                            setData(demoData);
+                            setDataSource("demo");
+                          }
+                        }}
+                      >
+                        <option value="">Choose version or use current draft</option>
+                        {versionsQuery.data?.map((version) => <option key={version.id} value={version.id}>v{version.versionNumber} · {version.source} · {version.skuCount} SKUs</option>)}
+                      </select>
+                    </label>
+                    <form
+                      onSubmit={(event) => { event.preventDefault(); void handleCreateWarehouse(); }}
+                      style={{ display: "flex", gap: "7px", alignItems: "end" }}
+                    >
+                      <label style={{ display: "grid", gap: "5px" }}>
+                        <span className="toolbar-kicker">NEW WAREHOUSE</span>
+                        <input className="app-select" value={warehouseName} onChange={(event) => setWarehouseName(event.target.value)} maxLength={191} placeholder="Warehouse name" />
+                      </label>
+                      <button className="outline-button compact" type="submit" disabled={!warehouseName.trim() || createWarehouseMutation.isPending}>
+                        {createWarehouseMutation.isPending ? "Creating…" : "Create"}
+                      </button>
+                    </form>
+                    <button
+                      className="primary-button"
+                      onClick={() => void handleSaveDataset()}
+                      type="button"
+                      disabled={!selectedWarehouseId || !validation.valid || importDatasetMutation.isPending}
+                    >
+                      {importDatasetMutation.isPending ? "Saving dataset…" : dataSource === "demo" ? "Save demo dataset" : "Save dataset version"}
+                    </button>
+                    {localDatasetAvailable && dataSource === "demo" && (
+                      <button className="text-button compact-text" onClick={handleImportLegacyDataset} type="button">Load previous browser dataset as draft</button>
+                    )}
+                  </>
+                )}
+              </div>
+              <div style={{ marginTop: "12px", color: "var(--muted)", fontSize: "11px" }}>
+                {warehouseLoadState === "loading" ? "Checking sign-in and loading your warehouses…" : auth.isAuthenticated
+                  ? warehouseDetailQuery.data?.name
+                    ? `Selected warehouse: ${warehouseDetailQuery.data.name}. ${versionsQuery.isLoading ? "Loading saved versions…" : `${versionsQuery.data?.length ?? 0} saved dataset version(s).`}`
+                    : warehouseLoadState === "error" ? "Warehouse loading failed. Review the error shown below; the current local data remains available." : warehouseLoadState === "empty" ? "No saved warehouses yet. Create one, then save the current demo or draft as a version." : "Demo data is local until you explicitly save a complete validated version."
+                  : "The warehouse optimizer demo works without signing in. Saved data requires the configured sign-in service."}
+              </div>
+              {(warehousesQuery.error || warehouseDetailQuery.error || versionsQuery.error || datasetQuery.error || runHistoryQuery.error || selectedRunQuery.error || createWarehouseMutation.error || importDatasetMutation.error || runOptimizationMutation.error || auth.error) && (
+                <div role="alert" className="runtime-notice" style={{ marginTop: "12px" }}>
+                  <AlertTriangle size={15} />
+                  {trpcErrorMessage(warehousesQuery.error || warehouseDetailQuery.error || versionsQuery.error || datasetQuery.error || runHistoryQuery.error || selectedRunQuery.error || createWarehouseMutation.error || importDatasetMutation.error || runOptimizationMutation.error || auth.error, "Saved warehouse data is unavailable.")}
+                </div>
+              )}
+              {notice && <div className="runtime-notice" style={{ marginTop: "12px" }}><Info size={15} />{notice}</div>}
             </div>
             <div className="dataset-layout">
               <div className="dataset-tabs">
@@ -994,9 +1265,31 @@ export default function Home() {
                         {run.validation.valid ? "Feasible solution" : "Infeasible"}
                       </StatusPill>
                     )}
+                  {dataSource === "persisted" && (
+                    <label style={{ display: "grid", gap: "4px", minWidth: "190px" }}>
+                      <span className="toolbar-kicker">SAVED RUN HISTORY</span>
+                      <select
+                        className="app-select"
+                        value={selectedRunId ?? ""}
+                        disabled={runHistoryQuery.isLoading || !(runHistoryQuery.data?.length)}
+                        onChange={(event) => {
+                          const id = event.target.value ? Number(event.target.value) : null;
+                          setSelectedRunId(id);
+                          setRun(null);
+                        }}
+                      >
+                        <option value="">Select saved run</option>
+                        {runHistoryQuery.data?.map((item) => (
+                          <option value={item.id} key={item.id}>
+                            #{item.id} · {item.algorithmKey} · {item.status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                     <button
                       className="run-button"
-                      disabled={running}
+                    disabled={running || (dataSource === "persisted" && (!auth.isAuthenticated || selectedDatasetVersionId === null || datasetQuery.isLoading || datasetQuery.data?.id !== selectedDatasetVersionId))}
                       onClick={handleRun}
                       type="button"
                     >
@@ -1013,6 +1306,10 @@ export default function Home() {
                   </div>
                 </div>
 
+                {selectedRunQuery.isLoading && dataSource === "persisted" && <div className="runtime-notice"><Database size={15} />Loading saved optimization run…</div>}
+                {selectedRunQuery.data?.status === "failed" && (
+                  <div role="status" className="runtime-notice"><AlertTriangle size={15} />Saved run {selectedRunQuery.data.id} failed: {selectedRunQuery.data.errorMessage ?? "No additional details were recorded."}</div>
+                )}
                 {notice && (
                   <div className="runtime-notice">
                     <Zap size={15} />
@@ -1120,7 +1417,7 @@ export default function Home() {
                 <button
                   className="outline-button compact"
                   onClick={handleRunBenchmark}
-                  disabled={benchmarkRunning}
+                  disabled={benchmarkRunning || dataSource === "persisted"}
                   type="button"
                 >
                   <RefreshCw size={14} className={benchmarkRunning ? "button-spinner" : ""} />
@@ -1130,8 +1427,9 @@ export default function Home() {
             </div>
 
             <p className="heading-paragraph" style={{ marginBottom: "20px" }}>
-              Both algorithms evaluated under identical conditions: same warehouse topology, SKU physical constraints,
-              identical 120-order workload replay, and identical (0,0) pick station.
+              {dataSource === "persisted"
+                ? "Persisted benchmark sessions are not available yet; this table is reserved for local demo or draft comparisons."
+                : `Both local algorithms use the same ${data.orders.length}-line workload, warehouse topology, physical constraints, and (0,0) pick station.`}
             </p>
 
             <div className="benchmark-card">

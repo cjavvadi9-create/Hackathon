@@ -1,0 +1,1667 @@
+{
+  "version": "5",
+  "dialect": "mysql",
+  "id": "78727b90-8ed2-4ae9-ac23-44fa6c868d62",
+  "prevId": "bd95a85e-2e49-4cb4-b28f-de49c4dd772f",
+  "tables": {
+    "benchmark_results": {
+      "name": "benchmark_results",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "datasetVersionId": {
+          "name": "datasetVersionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "benchmarkSessionId": {
+          "name": "benchmarkSessionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "optimizationRunId": {
+          "name": "optimizationRunId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "resultScope": {
+          "name": "resultScope",
+          "type": "enum('baseline','optimized')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "algorithmKey": {
+          "name": "algorithmKey",
+          "type": "enum('baseline','greedy','local_search')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "algorithmName": {
+          "name": "algorithmName",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "totalDistance": {
+          "name": "totalDistance",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "averageDistance": {
+          "name": "averageDistance",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "objective": {
+          "name": "objective",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "runtimeMs": {
+          "name": "runtimeMs",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assignments": {
+          "name": "assignments",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "constraintViolations": {
+          "name": "constraintViolations",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "feasible": {
+          "name": "feasible",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "improvementOverBaseline": {
+          "name": "improvementOverBaseline",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "iterations": {
+          "name": "iterations",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "swapsAccepted": {
+          "name": "swapsAccepted",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "converged": {
+          "name": "converged",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "stopReason": {
+          "name": "stopReason",
+          "type": "enum('converged','iteration_limit','time_limit')",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        }
+      },
+      "indexes": {
+        "benchmark_results_session_algorithm_uq": {
+          "name": "benchmark_results_session_algorithm_uq",
+          "columns": [
+            "benchmarkSessionId",
+            "algorithmKey"
+          ],
+          "isUnique": true
+        },
+        "benchmark_results_version_session_idx": {
+          "name": "benchmark_results_version_session_idx",
+          "columns": [
+            "datasetVersionId",
+            "benchmarkSessionId"
+          ],
+          "isUnique": false
+        },
+        "benchmark_results_version_run_idx": {
+          "name": "benchmark_results_version_run_idx",
+          "columns": [
+            "datasetVersionId",
+            "optimizationRunId"
+          ],
+          "isUnique": false
+        },
+        "benchmark_results_run_scope_idx": {
+          "name": "benchmark_results_run_scope_idx",
+          "columns": [
+            "optimizationRunId",
+            "resultScope"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "benchmark_results_version_session_fk": {
+          "name": "benchmark_results_version_session_fk",
+          "tableFrom": "benchmark_results",
+          "tableTo": "benchmark_sessions",
+          "columnsFrom": [
+            "datasetVersionId",
+            "benchmarkSessionId"
+          ],
+          "columnsTo": [
+            "datasetVersionId",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "benchmark_results_version_run_fk": {
+          "name": "benchmark_results_version_run_fk",
+          "tableFrom": "benchmark_results",
+          "tableTo": "optimization_runs",
+          "columnsFrom": [
+            "datasetVersionId",
+            "optimizationRunId"
+          ],
+          "columnsTo": [
+            "datasetVersionId",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "benchmark_results_id": {
+          "name": "benchmark_results_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "benchmark_sessions": {
+      "name": "benchmark_sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "datasetVersionId": {
+          "name": "datasetVersionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "requestedByUserId": {
+          "name": "requestedByUserId",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parameters": {
+          "name": "parameters",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('queued','running','succeeded','failed')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'queued'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        },
+        "startedAt": {
+          "name": "startedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completedAt": {
+          "name": "completedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "benchmark_sessions_version_id_uq": {
+          "name": "benchmark_sessions_version_id_uq",
+          "columns": [
+            "datasetVersionId",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "benchmark_sessions_version_created_idx": {
+          "name": "benchmark_sessions_version_created_idx",
+          "columns": [
+            "datasetVersionId",
+            "createdAt"
+          ],
+          "isUnique": false
+        },
+        "benchmark_sessions_requester_created_idx": {
+          "name": "benchmark_sessions_requester_created_idx",
+          "columns": [
+            "requestedByUserId",
+            "createdAt"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "benchmark_sessions_datasetVersionId_dataset_versions_id_fk": {
+          "name": "benchmark_sessions_datasetVersionId_dataset_versions_id_fk",
+          "tableFrom": "benchmark_sessions",
+          "tableTo": "dataset_versions",
+          "columnsFrom": [
+            "datasetVersionId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "benchmark_sessions_requestedByUserId_users_id_fk": {
+          "name": "benchmark_sessions_requestedByUserId_users_id_fk",
+          "tableFrom": "benchmark_sessions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "requestedByUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "benchmark_sessions_id": {
+          "name": "benchmark_sessions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "dataset_versions": {
+      "name": "dataset_versions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "warehouseId": {
+          "name": "warehouseId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "versionNumber": {
+          "name": "versionNumber",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "enum('csv','sample')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('draft','ready','failed')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'draft'"
+        },
+        "createdByUserId": {
+          "name": "createdByUserId",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "layoutCount": {
+          "name": "layoutCount",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "skuCount": {
+          "name": "skuCount",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "orderLineCount": {
+          "name": "orderLineCount",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "validationReport": {
+          "name": "validationReport",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        },
+        "validatedAt": {
+          "name": "validatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "dataset_versions_warehouse_version_uq": {
+          "name": "dataset_versions_warehouse_version_uq",
+          "columns": [
+            "warehouseId",
+            "versionNumber"
+          ],
+          "isUnique": true
+        },
+        "dataset_versions_warehouse_id_uq": {
+          "name": "dataset_versions_warehouse_id_uq",
+          "columns": [
+            "warehouseId",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "dataset_versions_warehouse_created_idx": {
+          "name": "dataset_versions_warehouse_created_idx",
+          "columns": [
+            "warehouseId",
+            "createdAt"
+          ],
+          "isUnique": false
+        },
+        "dataset_versions_status_created_idx": {
+          "name": "dataset_versions_status_created_idx",
+          "columns": [
+            "status",
+            "createdAt"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "dataset_versions_warehouseId_warehouses_id_fk": {
+          "name": "dataset_versions_warehouseId_warehouses_id_fk",
+          "tableFrom": "dataset_versions",
+          "tableTo": "warehouses",
+          "columnsFrom": [
+            "warehouseId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "dataset_versions_createdByUserId_users_id_fk": {
+          "name": "dataset_versions_createdByUserId_users_id_fk",
+          "tableFrom": "dataset_versions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "createdByUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "dataset_versions_id": {
+          "name": "dataset_versions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "optimization_runs": {
+      "name": "optimization_runs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "datasetVersionId": {
+          "name": "datasetVersionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "requestedByUserId": {
+          "name": "requestedByUserId",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "algorithmKey": {
+          "name": "algorithmKey",
+          "type": "enum('greedy','local_search')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "algorithmName": {
+          "name": "algorithmName",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parameters": {
+          "name": "parameters",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "routeAssumptions": {
+          "name": "routeAssumptions",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "optimizerVersion": {
+          "name": "optimizerVersion",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('queued','running','succeeded','failed')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'queued'"
+        },
+        "runtimeMs": {
+          "name": "runtimeMs",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "iterations": {
+          "name": "iterations",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "swapsAccepted": {
+          "name": "swapsAccepted",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "converged": {
+          "name": "converged",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "stopReason": {
+          "name": "stopReason",
+          "type": "enum('converged','iteration_limit','time_limit')",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reasons": {
+          "name": "reasons",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "validationReport": {
+          "name": "validationReport",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "errorMessage": {
+          "name": "errorMessage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        },
+        "startedAt": {
+          "name": "startedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completedAt": {
+          "name": "completedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "optimization_runs_version_id_uq": {
+          "name": "optimization_runs_version_id_uq",
+          "columns": [
+            "datasetVersionId",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "optimization_runs_version_created_idx": {
+          "name": "optimization_runs_version_created_idx",
+          "columns": [
+            "datasetVersionId",
+            "createdAt"
+          ],
+          "isUnique": false
+        },
+        "optimization_runs_requester_created_idx": {
+          "name": "optimization_runs_requester_created_idx",
+          "columns": [
+            "requestedByUserId",
+            "createdAt"
+          ],
+          "isUnique": false
+        },
+        "optimization_runs_status_created_idx": {
+          "name": "optimization_runs_status_created_idx",
+          "columns": [
+            "status",
+            "createdAt"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "optimization_runs_datasetVersionId_dataset_versions_id_fk": {
+          "name": "optimization_runs_datasetVersionId_dataset_versions_id_fk",
+          "tableFrom": "optimization_runs",
+          "tableTo": "dataset_versions",
+          "columnsFrom": [
+            "datasetVersionId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "optimization_runs_requestedByUserId_users_id_fk": {
+          "name": "optimization_runs_requestedByUserId_users_id_fk",
+          "tableFrom": "optimization_runs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "requestedByUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "optimization_runs_id": {
+          "name": "optimization_runs_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "order_lines": {
+      "name": "order_lines",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "datasetVersionId": {
+          "name": "datasetVersionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "orderId": {
+          "name": "orderId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "skuId": {
+          "name": "skuId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timestamp": {
+          "name": "timestamp",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "order_lines_version_order_sku_uq": {
+          "name": "order_lines_version_order_sku_uq",
+          "columns": [
+            "datasetVersionId",
+            "orderId",
+            "skuId"
+          ],
+          "isUnique": true
+        },
+        "order_lines_version_order_idx": {
+          "name": "order_lines_version_order_idx",
+          "columns": [
+            "datasetVersionId",
+            "orderId"
+          ],
+          "isUnique": false
+        },
+        "order_lines_version_sku_idx": {
+          "name": "order_lines_version_sku_idx",
+          "columns": [
+            "datasetVersionId",
+            "skuId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "order_lines_datasetVersionId_dataset_versions_id_fk": {
+          "name": "order_lines_datasetVersionId_dataset_versions_id_fk",
+          "tableFrom": "order_lines",
+          "tableTo": "dataset_versions",
+          "columnsFrom": [
+            "datasetVersionId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "order_lines_version_order_fk": {
+          "name": "order_lines_version_order_fk",
+          "tableFrom": "order_lines",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "datasetVersionId",
+            "orderId"
+          ],
+          "columnsTo": [
+            "datasetVersionId",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "order_lines_version_sku_fk": {
+          "name": "order_lines_version_sku_fk",
+          "tableFrom": "order_lines",
+          "tableTo": "skus",
+          "columnsFrom": [
+            "datasetVersionId",
+            "skuId"
+          ],
+          "columnsTo": [
+            "datasetVersionId",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "order_lines_id": {
+          "name": "order_lines_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "orders": {
+      "name": "orders",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "datasetVersionId": {
+          "name": "datasetVersionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "externalOrderId": {
+          "name": "externalOrderId",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "orders_version_external_id_uq": {
+          "name": "orders_version_external_id_uq",
+          "columns": [
+            "datasetVersionId",
+            "externalOrderId"
+          ],
+          "isUnique": true
+        },
+        "orders_version_id_uq": {
+          "name": "orders_version_id_uq",
+          "columns": [
+            "datasetVersionId",
+            "id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "orders_datasetVersionId_dataset_versions_id_fk": {
+          "name": "orders_datasetVersionId_dataset_versions_id_fk",
+          "tableFrom": "orders",
+          "tableTo": "dataset_versions",
+          "columnsFrom": [
+            "datasetVersionId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "orders_id": {
+          "name": "orders_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "run_assignments": {
+      "name": "run_assignments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "datasetVersionId": {
+          "name": "datasetVersionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "optimizationRunId": {
+          "name": "optimizationRunId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "enum('baseline','optimized')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "skuId": {
+          "name": "skuId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "locationId": {
+          "name": "locationId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "score": {
+          "name": "score",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "run_assignments_run_scope_sku_uq": {
+          "name": "run_assignments_run_scope_sku_uq",
+          "columns": [
+            "optimizationRunId",
+            "scope",
+            "skuId"
+          ],
+          "isUnique": true
+        },
+        "run_assignments_run_scope_location_uq": {
+          "name": "run_assignments_run_scope_location_uq",
+          "columns": [
+            "optimizationRunId",
+            "scope",
+            "locationId"
+          ],
+          "isUnique": true
+        },
+        "run_assignments_version_run_idx": {
+          "name": "run_assignments_version_run_idx",
+          "columns": [
+            "datasetVersionId",
+            "optimizationRunId"
+          ],
+          "isUnique": false
+        },
+        "run_assignments_version_sku_idx": {
+          "name": "run_assignments_version_sku_idx",
+          "columns": [
+            "datasetVersionId",
+            "skuId"
+          ],
+          "isUnique": false
+        },
+        "run_assignments_version_location_idx": {
+          "name": "run_assignments_version_location_idx",
+          "columns": [
+            "datasetVersionId",
+            "locationId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "run_assignments_version_run_fk": {
+          "name": "run_assignments_version_run_fk",
+          "tableFrom": "run_assignments",
+          "tableTo": "optimization_runs",
+          "columnsFrom": [
+            "datasetVersionId",
+            "optimizationRunId"
+          ],
+          "columnsTo": [
+            "datasetVersionId",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "run_assignments_version_sku_fk": {
+          "name": "run_assignments_version_sku_fk",
+          "tableFrom": "run_assignments",
+          "tableTo": "skus",
+          "columnsFrom": [
+            "datasetVersionId",
+            "skuId"
+          ],
+          "columnsTo": [
+            "datasetVersionId",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "run_assignments_version_location_fk": {
+          "name": "run_assignments_version_location_fk",
+          "tableFrom": "run_assignments",
+          "tableTo": "warehouse_locations",
+          "columnsFrom": [
+            "datasetVersionId",
+            "locationId"
+          ],
+          "columnsTo": [
+            "datasetVersionId",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "run_assignments_id": {
+          "name": "run_assignments_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "run_metrics": {
+      "name": "run_metrics",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "optimizationRunId": {
+          "name": "optimizationRunId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "enum('baseline','optimized')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "objective": {
+          "name": "objective",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "totalDistance": {
+          "name": "totalDistance",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "averageDistance": {
+          "name": "averageDistance",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "averagePickSeconds": {
+          "name": "averagePickSeconds",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "throughput": {
+          "name": "throughput",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "capacityUtilization": {
+          "name": "capacityUtilization",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "validAssignments": {
+          "name": "validAssignments",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "constraintViolations": {
+          "name": "constraintViolations",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        }
+      },
+      "indexes": {
+        "run_metrics_run_scope_uq": {
+          "name": "run_metrics_run_scope_uq",
+          "columns": [
+            "optimizationRunId",
+            "scope"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "run_metrics_optimizationRunId_optimization_runs_id_fk": {
+          "name": "run_metrics_optimizationRunId_optimization_runs_id_fk",
+          "tableFrom": "run_metrics",
+          "tableTo": "optimization_runs",
+          "columnsFrom": [
+            "optimizationRunId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "run_metrics_id": {
+          "name": "run_metrics_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "skus": {
+      "name": "skus",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "datasetVersionId": {
+          "name": "datasetVersionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "skuId": {
+          "name": "skuId",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "length": {
+          "name": "length",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "width": {
+          "name": "width",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "height": {
+          "name": "height",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight": {
+          "name": "weight",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "demandFrequency": {
+          "name": "demandFrequency",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storageClass": {
+          "name": "storageClass",
+          "type": "enum('ambient','cold','hazmat')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "handlingRestrictions": {
+          "name": "handlingRestrictions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "skus_version_sku_uq": {
+          "name": "skus_version_sku_uq",
+          "columns": [
+            "datasetVersionId",
+            "skuId"
+          ],
+          "isUnique": true
+        },
+        "skus_version_id_uq": {
+          "name": "skus_version_id_uq",
+          "columns": [
+            "datasetVersionId",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "skus_version_storage_class_idx": {
+          "name": "skus_version_storage_class_idx",
+          "columns": [
+            "datasetVersionId",
+            "storageClass"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "skus_datasetVersionId_dataset_versions_id_fk": {
+          "name": "skus_datasetVersionId_dataset_versions_id_fk",
+          "tableFrom": "skus",
+          "tableTo": "dataset_versions",
+          "columnsFrom": [
+            "datasetVersionId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "skus_id": {
+          "name": "skus_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "openId": {
+          "name": "openId",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(320)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "loginMethod": {
+          "name": "loginMethod",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "enum('user','admin')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'user'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "onUpdate": true,
+          "default": "(now())"
+        },
+        "lastSignedIn": {
+          "name": "lastSignedIn",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "users_id": {
+          "name": "users_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "users_openId_unique": {
+          "name": "users_openId_unique",
+          "columns": [
+            "openId"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "warehouse_locations": {
+      "name": "warehouse_locations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "datasetVersionId": {
+          "name": "datasetVersionId",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "locationId": {
+          "name": "locationId",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "xCoordinate": {
+          "name": "xCoordinate",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "yCoordinate": {
+          "name": "yCoordinate",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "aisleId": {
+          "name": "aisleId",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "capacityWeight": {
+          "name": "capacityWeight",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "capacityVolume": {
+          "name": "capacityVolume",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "zone": {
+          "name": "zone",
+          "type": "enum('ambient','cold','hazmat')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "accessibility": {
+          "name": "accessibility",
+          "type": "enum('open','restricted')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "warehouse_locations_version_location_uq": {
+          "name": "warehouse_locations_version_location_uq",
+          "columns": [
+            "datasetVersionId",
+            "locationId"
+          ],
+          "isUnique": true
+        },
+        "warehouse_locations_version_id_uq": {
+          "name": "warehouse_locations_version_id_uq",
+          "columns": [
+            "datasetVersionId",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "warehouse_locations_version_zone_aisle_idx": {
+          "name": "warehouse_locations_version_zone_aisle_idx",
+          "columns": [
+            "datasetVersionId",
+            "zone",
+            "aisleId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "warehouse_locations_datasetVersionId_dataset_versions_id_fk": {
+          "name": "warehouse_locations_datasetVersionId_dataset_versions_id_fk",
+          "tableFrom": "warehouse_locations",
+          "tableTo": "dataset_versions",
+          "columnsFrom": [
+            "datasetVersionId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "warehouse_locations_id": {
+          "name": "warehouse_locations_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "warehouses": {
+      "name": "warehouses",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "ownerUserId": {
+          "name": "ownerUserId",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(191)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "onUpdate": true,
+          "default": "(now())"
+        },
+        "archivedAt": {
+          "name": "archivedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "warehouses_owner_updated_idx": {
+          "name": "warehouses_owner_updated_idx",
+          "columns": [
+            "ownerUserId",
+            "updatedAt"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "warehouses_ownerUserId_users_id_fk": {
+          "name": "warehouses_ownerUserId_users_id_fk",
+          "tableFrom": "warehouses",
+          "tableTo": "users",
+          "columnsFrom": [
+            "ownerUserId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "warehouses_id": {
+          "name": "warehouses_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    }
+  },
+  "views": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "tables": {},
+    "indexes": {}
+  }
+}

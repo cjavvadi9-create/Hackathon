@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   assignmentCsv,
-  clearRun,
   computeObjective,
   computeOrderRoute,
   cooccurrence,
@@ -10,16 +9,13 @@ import {
   exportEvaluationReportCsv,
   exportRunCsv,
   getOrderIds,
-  loadData,
-  loadRun,
+  loadLegacyDataset,
   makeSampleData,
   metricDelta,
   optimize,
   optimizeLocalSearch,
   parseDatasetCsv,
   runBenchmark,
-  saveData,
-  saveRun,
   validateAssignments,
   validateDataset,
   type Assignment,
@@ -202,7 +198,7 @@ describe("OptiStore AI optimizer audit", () => {
     expect(run.validation.issues.some((issue) => issue.code === "assignment_completeness")).toBe(true);
   });
 
-  it("exports displayed assignments and KPI deltas, and persists datasets and runs", () => {
+  it("exports displayed assignments and KPI deltas, and can read legacy data for explicit import", () => {
     const data = makeSampleData();
     const run = optimize(data);
     const assignmentExport = assignmentCsv(run);
@@ -213,12 +209,8 @@ describe("OptiStore AI optimizer audit", () => {
     expect(performanceExport).toContain(String(run.optimized.totalDistance));
     expect(datasetCsv("layout", data)).toContain("location_id");
 
-    saveData(data);
-    saveRun(run);
-    expect(loadData()).toEqual(data);
-    expect(loadRun()).toEqual(run);
-    clearRun();
-    expect(loadRun()).toBeNull();
+    localStorage.setItem("optistore-e1-datasets", JSON.stringify(data));
+    expect(loadLegacyDataset()).toEqual(data);
   });
 });
 
@@ -303,6 +295,42 @@ describe("Local search optimizer", () => {
     expect(run.swapsAccepted!).toBeGreaterThanOrEqual(0);
     expect(run.reasons.length).toBeGreaterThanOrEqual(3);
   });
+
+  it("keeps accepted assignment explanations and scores in sync with their final locations", () => {
+    const sampleData = makeSampleData();
+    const data: DatasetBundle = {
+      ...sampleData,
+      layout: sampleData.layout.map((location, index) => ({
+        ...location,
+        x_coordinate: index + 1,
+        y_coordinate: 0,
+      })),
+    };
+    const parameters = {
+      travelWeight: 0.55,
+      cooccurrenceWeight: 0.25,
+      demandWeight: 0.2,
+      timeLimitMs: 10_000,
+      seed: 42,
+      maxIterations: 5_000,
+    };
+    const greedyRun = optimize(data, parameters);
+    const run = optimizeLocalSearch(data, parameters);
+    const locationById = new Map(data.layout.map((location) => [location.location_id, location]));
+    const greedyLocationBySku = new Map(greedyRun.assignments.map((assignment) => [assignment.sku_id, assignment.location_id]));
+    const changedAssignments = run.assignments.filter((assignment) => greedyLocationBySku.get(assignment.sku_id) !== assignment.location_id);
+
+    expect(run.swapsAccepted).toBeGreaterThan(0);
+    expect(changedAssignments.length).toBeGreaterThan(0);
+    for (const assignment of run.assignments) {
+      const location = locationById.get(assignment.location_id)!;
+      const expectedScore = Number(Math.max(0.5, 1 - Math.hypot(location.x_coordinate, location.y_coordinate) / 100).toFixed(2));
+      expect(assignment.score).toBe(expectedScore);
+    }
+    for (const assignment of changedAssignments) {
+      expect(assignment.reason).toContain("Local search swap");
+    }
+  });
 });
 
 describe("Algorithm benchmarking", () => {
@@ -343,8 +371,8 @@ describe("Algorithm benchmarking", () => {
     const greedyObj = computeObjective(data, benchmark.greedyRun.assignments, params, demand, co);
     const lsObj = computeObjective(data, benchmark.localSearchRun.assignments, params, demand, co);
 
-    expect(benchmark.greedy.objective).toBe(greedyObj);
-    expect(benchmark.localSearch.objective).toBe(lsObj);
+    expect(benchmark.greedy.objective).toBe(Number(greedyObj.toFixed(4)));
+    expect(benchmark.localSearch.objective).toBe(Number(lsObj.toFixed(4)));
   });
 });
 
@@ -441,6 +469,65 @@ describe("Evaluation report export", () => {
 });
 
 describe("Objective function mathematical consistency (Requirement 1)", () => {
+  it("preserves a real objective improvement smaller than 0.0001", () => {
+    const smallData: DatasetBundle = {
+      layout: [
+        { location_id: "LOC-1", x_coordinate: 1, y_coordinate: 0, aisle_id: "A1", capacity_weight: 10, capacity_volume: 1, zone: "ambient", accessibility: "open" },
+        { location_id: "LOC-2", x_coordinate: 2, y_coordinate: 0, aisle_id: "A2", capacity_weight: 10, capacity_volume: 1, zone: "ambient", accessibility: "open" },
+      ],
+      skus: [
+        { sku_id: "SKU-A", length: 0.1, width: 0.1, height: 0.1, weight: 1, demand_frequency: 0, storage_class: "ambient", handling_restrictions: "standard" },
+        { sku_id: "SKU-B", length: 0.1, width: 0.1, height: 0.1, weight: 1, demand_frequency: 0, storage_class: "ambient", handling_restrictions: "standard" },
+      ],
+      orders: [
+        { order_id: "ORD-A", sku_id: "SKU-A", quantity: 2, timestamp: "2026-10-27T00:00:00Z" },
+        { order_id: "ORD-B", sku_id: "SKU-B", quantity: 1, timestamp: "2026-10-27T00:01:00Z" },
+      ],
+    };
+    const current: Assignment[] = [
+      { sku_id: "SKU-A", location_id: "LOC-2", score: 1, reason: "current" },
+      { sku_id: "SKU-B", location_id: "LOC-1", score: 1, reason: "current" },
+    ];
+    const candidate: Assignment[] = [
+      { sku_id: "SKU-A", location_id: "LOC-1", score: 1, reason: "candidate" },
+      { sku_id: "SKU-B", location_id: "LOC-2", score: 1, reason: "candidate" },
+    ];
+    const parameters = { travelWeight: 0, demandWeight: 0.0001, cooccurrenceWeight: 0 };
+    const { demand } = validateDataset(smallData, true);
+    const co = cooccurrence(smallData);
+
+    const currentObjective = computeObjective(smallData, current, parameters, demand, co);
+    const candidateObjective = computeObjective(smallData, candidate, parameters, demand, co);
+    const improvement = currentObjective - candidateObjective;
+
+    expect(improvement).toBeGreaterThan(1e-9);
+    expect(improvement).toBeLessThan(0.0001);
+    expect(candidateObjective).toBeLessThan(currentObjective);
+  });
+
+  it("accepts local-search improvements when the objective delta is below 0.0001", () => {
+    const data = makeSampleData();
+    const parameters = {
+      travelWeight: 0.00055,
+      demandWeight: 0.0002,
+      cooccurrenceWeight: 0.00025,
+      timeLimitMs: 10_000,
+      seed: 42,
+      maxIterations: 5_000,
+    };
+    const greedyRun = optimize(data, parameters);
+    const run = optimizeLocalSearch(data, parameters);
+    const { demand } = validateDataset(data, true);
+    const co = cooccurrence(data);
+    const greedyObjective = computeObjective(data, greedyRun.assignments, parameters, demand, co);
+    const localSearchObjective = computeObjective(data, run.assignments, parameters, demand, co);
+    const improvement = greedyObjective - localSearchObjective;
+
+    expect(run.swapsAccepted).toBeGreaterThan(0);
+    expect(improvement).toBeGreaterThan(1e-9);
+    expect(improvement).toBeLessThan(0.0001);
+  });
+
   it("verifies that each unordered SKU pair contributes exactly once to co-occurrence in computeObjective", () => {
     // Construct minimal 2-SKU, 2-location dataset
     const smallData: DatasetBundle = {
@@ -517,7 +604,7 @@ describe("Objective function mathematical consistency (Requirement 1)", () => {
     // single unordered co-occurrence pair has normalized distance 1.
     // J(A) = 0.5*(12/24) + 0.2*(7/8) + 0.3*(1) = 0.7250.
     const objective = computeObjective(smallData, assignments, params, demand, co);
-    expect(objective).toBe(0.725);
+    expect(objective).toBeCloseTo(0.725, 12);
 
     const withoutCooccurrence = computeObjective(smallData, assignments, { ...params, cooccurrenceWeight: 0 }, demand, co);
     expect(Number((objective - withoutCooccurrence).toFixed(4))).toBe(0.3);
@@ -548,9 +635,9 @@ describe("Local search stop reason (Requirement 2)", () => {
       travelWeight: 0.55,
       cooccurrenceWeight: 0.25,
       demandWeight: 0.2,
-      timeLimitMs: 5000,
+      timeLimitMs: 20_000,
       seed: 42,
-      maxIterations: 5000,
+      maxIterations: 50_000,
     });
 
     expect(convergedRun.stopReason).toBe("converged");
