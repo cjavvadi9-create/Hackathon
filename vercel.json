@@ -3,7 +3,7 @@
   "framework": "express",
   "functions": {
     "app.ts": {
-      "includeFiles": "public/index.html"
+      "includeFiles": "public/**"
     }
   }
 }
