@@ -5,16 +5,16 @@ describe("MySQL connection configuration", () => {
   it("translates ssl-mode URLs into strict mysql2 TLS options", () => {
     const settings = mysqlConnectionSettings(
       "mysql://app_user:not-real%40password@db.example:24813/optistore?ssl-mode=REQUIRED&connectTimeout=5000",
+      "test CA certificate",
     );
 
     expect(settings.uri).not.toContain("ssl-mode");
     expect(settings.uri).toContain("connectTimeout=5000");
-   expect(settings.ssl).toMatchObject({
-  rejectUnauthorized: true,
-  verifyIdentity: true,
-});
-
-expect(settings.ssl.ca).toBeTruthy();
+    expect(settings.ssl).toEqual({
+      rejectUnauthorized: true,
+      verifyIdentity: true,
+      ca: "test CA certificate",
+    });
   });
 
   it("normalizes an optional CA certificate from environment-style PEM text", () => {
