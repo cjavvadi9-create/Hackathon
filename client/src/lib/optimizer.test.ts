@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assignmentCsv,
   computeObjective,
   computeOrderRoute,
   cooccurrence,
   datasetCsv,
+  downloadText,
   explainSku,
   exportEvaluationReportCsv,
   exportRunCsv,
@@ -465,6 +466,46 @@ describe("Evaluation report export", () => {
     expect(csv).toContain(String(run.optimized.totalDistance));
     expect(csv).toContain(String(run.baseline.totalDistance));
     expect(csv).toContain(String(data.layout.length));
+  });
+});
+
+describe("CSV download helper", () => {
+  it("clicks an attached download link before releasing its blob URL", () => {
+    vi.useFakeTimers();
+    const click = vi.fn();
+    const remove = vi.fn();
+    const appendChild = vi.fn();
+    const anchor = {
+      href: "",
+      download: "",
+      style: { display: "" },
+      click,
+      remove,
+    };
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => anchor),
+      body: { appendChild },
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:optistore-test");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    try {
+      downloadText("results.csv", "sku_id,location_id\nSKU-1,A-01");
+
+      expect(anchor.download).toBe("results.csv");
+      expect(anchor.style.display).toBe("none");
+      expect(appendChild).toHaveBeenCalledWith(anchor);
+      expect(click).toHaveBeenCalledOnce();
+      expect(remove).toHaveBeenCalledOnce();
+      expect(revoke).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1_000);
+      expect(revoke).toHaveBeenCalledWith("blob:optistore-test");
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
   });
 });
 

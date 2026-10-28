@@ -1,7 +1,10 @@
+import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { createPool } from "mysql2";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { mysqlConnectionSettings } from "./mysql-config";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -9,9 +12,12 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      const settings = mysqlConnectionSettings(process.env.DATABASE_URL, process.env.DATABASE_CA_CERT);
+      const pool = createPool({ uri: settings.uri, ssl: settings.ssl });
+      _db = drizzle(pool);
+    } catch {
+      // Keep connection URL contents, including credentials, out of logs.
+      console.warn("[Database] Failed to initialize MySQL client.");
       _db = null;
     }
   }
@@ -71,7 +77,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       set: updateSet,
     });
   } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
+    console.error("[Database] Failed to upsert user.");
     throw error;
   }
 }
@@ -79,8 +85,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
+    throw new Error("Database is not available");
   }
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);

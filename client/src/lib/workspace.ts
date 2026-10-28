@@ -1,9 +1,10 @@
 import { TRPCClientError } from "@trpc/client";
 import { UNAUTHED_ERR_MSG } from "@shared/const";
 import type { OptimizationParameters } from "../../../drizzle/schema";
-import type { OptimizationRun } from "./optimizer";
+import { getOrderIds, optimize, optimizeLocalSearch, type DatasetBundle, type OptimizationRun } from "./optimizer";
 
 export type WorkspaceMode = "demo" | "draft" | "persisted";
+export const DEMO_WORKSPACE_SCROLL_TARGET = "datasets" as const;
 
 export function createOptimizationInput(
   datasetVersionId: number,
@@ -30,6 +31,43 @@ export function latestCompletedRunId(runs: ReadonlyArray<{ id: number; status: s
 
 export function runsOnBackend(source: WorkspaceMode): boolean {
   return source === "persisted";
+}
+
+export function runLocalOptimization(
+  data: DatasetBundle,
+  algorithmKey: "greedy" | "local_search",
+  weights: Pick<OptimizationParameters, "travelWeight" | "cooccurrenceWeight" | "demandWeight">,
+  maxIterations: number,
+): OptimizationRun {
+  if (algorithmKey === "greedy") {
+    return optimize(data, { ...weights, timeLimitMs: 1000, seed: 42 });
+  }
+  return optimizeLocalSearch(data, { ...weights, timeLimitMs: 2000, seed: 42, maxIterations });
+}
+
+export function createDemoWorkspaceState(data: DatasetBundle) {
+  return {
+    data,
+    dataSource: "demo" as const,
+    scrollTarget: DEMO_WORKSPACE_SCROLL_TARGET,
+    selectedDatasetVersionId: null,
+    selectedRunId: null,
+    selectedSkuId: null,
+    selectedAlgo: "local_search" as const,
+    maxIterations: 500,
+    weights: { travelWeight: 0.55, demandWeight: 0.2, cooccurrenceWeight: 0.25 },
+    activeDataset: "layout" as const,
+    mapMode: "optimized" as const,
+    selectedLocation: data.layout[0]?.location_id ?? null,
+    selectedOrderId: getOrderIds(data)[0] ?? "ORD-80001",
+    run: runLocalOptimization(data, "local_search", {
+      travelWeight: 0.55,
+      cooccurrenceWeight: 0.25,
+      demandWeight: 0.2,
+    }, 500),
+    benchmark: null,
+    notice: `Synthetic demo workspace loaded locally: ${data.layout.length} locations, ${data.skus.length} SKUs, ${new Set(data.orders.map((order) => order.order_id)).size} sample orders. Use the layout and SKU tabs here, then choose Open optimizer to run Greedy or Local Search. Demo runs and benchmarks are not saved to MySQL.`,
+  };
 }
 
 export function apiQueryState(input: { isLoading: boolean; isError: boolean; hasData: boolean }): "loading" | "error" | "ready" | "empty" {

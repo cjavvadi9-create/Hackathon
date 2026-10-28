@@ -51,8 +51,6 @@ import {
   loadLegacyDataset,
   makeSampleData,
   metricDelta,
-  optimize,
-  optimizeLocalSearch,
   parseDatasetCsv,
   runBenchmark,
   validateDataset,
@@ -60,7 +58,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { startLogin } from "@/const";
-import { apiQueryState, createOptimizationInput, createWarehouseAndRefresh, importAndRefresh, latestCompletedRunId, runAndRefresh, runsOnBackend, trpcErrorMessage, workspaceSourceLabel } from "@/lib/workspace";
+import { apiQueryState, createDemoWorkspaceState, createOptimizationInput, createWarehouseAndRefresh, DEMO_WORKSPACE_SCROLL_TARGET, importAndRefresh, latestCompletedRunId, runAndRefresh, runLocalOptimization, runsOnBackend, trpcErrorMessage, workspaceSourceLabel } from "@/lib/workspace";
 
 const demoData = makeSampleData();
 const stages = [
@@ -70,6 +68,12 @@ const stages = [
   ["Solve slotting optimization", "Deterministic greedy placement + local search swap exploration"],
   ["Evaluate routes + validate proof", "Same order set and distance model"],
 ];
+
+function waitForBrowserPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+  });
+}
 
 const navItems = [
   ["dashboard", "Executive dashboard"],
@@ -100,12 +104,25 @@ function BrandMark() {
 function StatusPill({
   children,
   tone = "neutral",
+  onClick,
+  disabled = false,
 }: {
   children: React.ReactNode;
   tone?: "neutral" | "orange" | "green" | "blue";
+  onClick?: () => void;
+  disabled?: boolean;
 }) {
+  const className = `status-pill status-${tone}${onClick ? " status-pill-button" : ""}`;
+  if (onClick) {
+    return (
+      <button className={className} onClick={onClick} disabled={disabled} type="button" title="Click to reload the synthetic demo workspace" style={{ background: "transparent", cursor: disabled ? "default" : "pointer" }}>
+        <span className="status-dot" />
+        {children}
+      </button>
+    );
+  }
   return (
-    <span className={`status-pill status-${tone}`}>
+    <span className={className}>
       <span className="status-dot" />
       {children}
     </span>
@@ -223,25 +240,10 @@ export default function Home() {
   const [selectedAlgo, setSelectedAlgo] = useState<"greedy" | "local_search">("local_search");
   const [maxIterations, setMaxIterations] = useState(500);
 
-  const [run, setRun] = useState<OptimizationRun | null>(() => {
-    const generated = optimizeLocalSearch(demoData, {
-      travelWeight: 0.55,
-      demandWeight: 0.2,
-      cooccurrenceWeight: 0.25,
-      timeLimitMs: 2000,
-      seed: 42,
-      maxIterations: 500,
-    });
-    return generated;
-  });
-
-  const [benchmark, setBenchmark] = useState<ReturnType<typeof runBenchmark> | null>(() => {
-    try {
-      return runBenchmark(demoData);
-    } catch {
-      return null;
-    }
-  });
+  // Keep useful demo metrics visible on first load. Only the selected local
+  // optimizer runs here; the heavier comparison remains an explicit action.
+  const [run, setRun] = useState<OptimizationRun | null>(() => createDemoWorkspaceState(demoData).run);
+  const [benchmark, setBenchmark] = useState<ReturnType<typeof runBenchmark> | null>(null);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
 
   const [running, setRunning] = useState(false);
@@ -368,6 +370,8 @@ export default function Home() {
       setStageIndex(current);
     }, 450);
     try {
+      // Let React paint the busy state before the CPU-bound local optimizer runs.
+      await waitForBrowserPaint();
       let nextRun: OptimizationRun;
       if (runsOnBackend(dataSource)) {
         if (selectedDatasetVersionId === null || !auth.isAuthenticated) {
@@ -383,48 +387,47 @@ export default function Home() {
         setBenchmark(null);
         setNotice(`Server optimization saved as run ${persisted.id}. ${nextRun.validation.passed}/${nextRun.validation.checks} validation checks passed.${refreshError ? " The run history refresh failed; the completed result is still shown." : ""}`);
       } else {
-        nextRun = selectedAlgo === "local_search"
-          ? optimizeLocalSearch(data, { ...weights, timeLimitMs: 2000, seed: 42, maxIterations })
-          : optimize(data, { ...weights, timeLimitMs: 1000, seed: 42 });
-        try {
-          setBenchmark(runBenchmark(data, { ...weights, timeLimitMs: 3000, seed: 42, maxIterations }));
-        } catch {
-          setBenchmark(null);
-        }
+        // Benchmarking is a separate, explicit action. Clear any old comparison
+        // so it cannot be mistaken for results from the current settings.
+        setBenchmark(null);
+        nextRun = runLocalOptimization(data, selectedAlgo, weights, maxIterations);
         setNotice(`Local ${dataSource === "demo" ? "demo" : "draft"} optimization complete using ${nextRun.algorithm}. ${nextRun.runtimeMs ?? 0}ms; ${nextRun.validation.passed}/${nextRun.validation.checks} validation checks passed. This run is not saved to the backend.`);
       }
       setRun(nextRun);
       setStageIndex(stages.length - 1);
     } catch (error) {
-      setNotice(trpcErrorMessage(error, "Optimization failed. Your selected dataset is still available."));
+      setStageIndex(-1);
+      const detail = trpcErrorMessage(error, "The selected dataset is still available.");
+      setNotice(dataSource === "persisted" ? detail : `Local ${dataSource} optimization failed: ${detail}`);
     } finally {
       window.clearInterval(timer);
       setRunning(false);
     }
   };
 
-  const handleRunBenchmark = () => {
+  const handleRunBenchmark = async () => {
     if (dataSource === "persisted") {
       setNotice("Benchmarking is currently available in local demo or draft mode; persisted benchmark APIs are not implemented yet.");
       return;
     }
     setBenchmarkRunning(true);
-    window.setTimeout(() => {
-      try {
-        const b = runBenchmark(data, {
-          ...weights,
-          timeLimitMs: 3000,
-          seed: 42,
-          maxIterations,
-        });
-        setBenchmark(b);
-        setNotice(`Local ${dataSource === "demo" ? "demo" : "draft"} head-to-head benchmark completed. Greedy runtime: ${b.greedy.runtimeMs}ms vs Local Search runtime: ${b.localSearch.runtimeMs}ms. This benchmark is not saved to the backend.`);
-      } catch (err) {
-        setNotice(err instanceof Error ? err.message : "Benchmark failed.");
-      } finally {
-        setBenchmarkRunning(false);
-      }
-    }, 200);
+    setBenchmark(null);
+    setNotice("");
+    try {
+      await waitForBrowserPaint();
+      const b = runBenchmark(data, {
+        ...weights,
+        timeLimitMs: 3000,
+        seed: 42,
+        maxIterations,
+      });
+      setBenchmark(b);
+      setNotice(`Local ${dataSource === "demo" ? "demo" : "draft"} head-to-head benchmark completed. Greedy runtime: ${b.greedy.runtimeMs}ms vs Local Search runtime: ${b.localSearch.runtimeMs}ms. This benchmark is not saved to the backend.`);
+    } catch (error) {
+      setNotice(`Local ${dataSource} benchmark failed. ${error instanceof Error ? error.message : "The current dataset remains available."}`);
+    } finally {
+      setBenchmarkRunning(false);
+    }
   };
 
   const handleUpload = async (kind: DatasetKind, event: ChangeEvent<HTMLInputElement>) => {
@@ -543,6 +546,47 @@ export default function Home() {
     }
   };
 
+  const handleLoadDemoData = async () => {
+    if (dataSource === "draft" && !window.confirm("Replace the current unsaved draft with the synthetic demo dataset?")) return;
+    setData(demoData);
+    setDataSource("demo");
+    setSelectedDatasetVersionId(null);
+    setSelectedRunId(null);
+    setSelectedSkuId(null);
+    setSelectedAlgo("local_search");
+    setMaxIterations(500);
+    setWeights({ travelWeight: 0.55, demandWeight: 0.2, cooccurrenceWeight: 0.25 });
+    setActiveDataset("layout");
+    setMapMode("optimized");
+    setSelectedLocation("A-01");
+    setSelectedOrderId(getOrderIds(demoData)[0] ?? "ORD-80001");
+    setRun(null);
+    setBenchmark(null);
+    setRunning(true);
+    setStageIndex(0);
+    setNotice(`Loading the local demo dataset (${demoData.layout.length} locations, ${demoData.skus.length} SKUs). Preparing its initial local-search result…`);
+    window.requestAnimationFrame(() => scrollToId(DEMO_WORKSPACE_SCROLL_TARGET));
+    try {
+      await waitForBrowserPaint();
+      const demo = createDemoWorkspaceState(demoData);
+      setRun(demo.run);
+      setSelectedAlgo(demo.selectedAlgo);
+      setMaxIterations(demo.maxIterations);
+      setWeights(demo.weights);
+      setActiveDataset(demo.activeDataset);
+      setMapMode(demo.mapMode);
+      setSelectedLocation(demo.selectedLocation);
+      setSelectedOrderId(demo.selectedOrderId);
+      setNotice(demo.notice);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "The local optimizer could not run.";
+      setNotice(`Demo data loaded locally, but the initial local-search run failed: ${detail}`);
+      setStageIndex(-1);
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const downloadDataset = (kind: DatasetKind) =>
     downloadText(`optistore-${kind}-sample.csv`, datasetCsv(kind, data));
 
@@ -579,7 +623,13 @@ export default function Home() {
             ))}
           </nav>
           <div className="header-actions">
-            <StatusPill tone={dataSource === "persisted" ? "green" : "blue"}>{dataSource === "persisted" ? "Server-backed dataset" : dataSource === "draft" ? "Local draft" : "Demo mode"}</StatusPill>
+            <StatusPill
+              tone={dataSource === "persisted" ? "green" : "blue"}
+              onClick={dataSource === "demo" ? handleLoadDemoData : undefined}
+              disabled={running || benchmarkRunning}
+            >
+              {dataSource === "persisted" ? "Server-backed dataset" : dataSource === "draft" ? "Local draft" : "Demo mode"}
+            </StatusPill>
             <button className="header-cta" onClick={() => scrollToId("control")} type="button">
               Open optimizer <ArrowRight size={15} />
             </button>
@@ -854,6 +904,11 @@ export default function Home() {
                   <span className="toolbar-kicker">DATA SOURCE</span>
                   <div style={{ marginTop: "7px" }}><StatusPill tone={dataSource === "persisted" ? "green" : dataSource === "draft" ? "orange" : "blue"}>{workspaceSourceLabel(dataSource)}</StatusPill></div>
                 </div>
+                {dataSource !== "demo" && (
+                  <button className="outline-button compact" onClick={handleLoadDemoData} type="button" disabled={running || benchmarkRunning}>
+                    Use demo data
+                  </button>
+                )}
                 {!auth.isAuthenticated && (
                   <>
                     <button className="outline-button compact" onClick={handleSignIn} type="button">Sign in to load saved data</button>
@@ -1421,7 +1476,7 @@ export default function Home() {
                   type="button"
                 >
                   <RefreshCw size={14} className={benchmarkRunning ? "button-spinner" : ""} />
-                  {benchmarkRunning ? "Benchmarking…" : "Re-run benchmark"}
+                  {benchmarkRunning ? "Benchmarking…" : benchmark ? "Re-run benchmark" : "Run benchmark"}
                 </button>
               </div>
             </div>
@@ -1787,8 +1842,7 @@ export default function Home() {
                 <strong>Geometric Route Disclaimer:</strong>
                 Travel distances are calculated using simplified Euclidean geometric estimates from the
                 picking station at (0, 0) through item locations and back. Genuine warehouse routing requires
-                topological aisle-constrained graphs (planned for Evaluation 2); synthetic graph connectivity is
-                intentionally not invented here to preserve engineering integrity.
+                a topological aisle-constrained graph, which is not part of this distance estimate.
               </div>
             </div>
 
@@ -2011,21 +2065,19 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="validation-lines">
-                  <span>
-                    <Check size={13} /> Assignment completeness (36/36)
-                  </span>
-                  <span>
-                    <Check size={13} /> Weight capacity (&le; rack max)
-                  </span>
-                  <span>
-                    <Check size={13} /> Volumetric capacity fit
-                  </span>
-                  <span>
-                    <Check size={13} /> Storage class zone compatibility
-                  </span>
-                  <span>
-                    <Check size={13} /> 1-to-1 unique slot reservation
-                  </span>
+                  {!run ? (
+                    <span><Info size={13} /> Run greedy or local search to validate assignments.</span>
+                  ) : run.validation.valid ? (
+                    <>
+                      <span><Check size={13} /> Assignment completeness ({run.optimized.validAssignments}/{data.skus.length})</span>
+                      <span><Check size={13} /> Weight capacity (&le; rack max)</span>
+                      <span><Check size={13} /> Volumetric capacity fit</span>
+                      <span><Check size={13} /> Storage class zone compatibility</span>
+                      <span><Check size={13} /> 1-to-1 unique slot reservation</span>
+                    </>
+                  ) : (
+                    <span><AlertTriangle size={13} /> {run.validation.failed} validation check(s) failed; review the dataset before relying on assignments.</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -2132,64 +2184,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ROADMAP */}
-        <section className="roadmap section-pad" id="roadmap">
-          <div className="page-width roadmap-grid">
-            <div>
-              <span className="section-kicker">THE EVALUATION ROADMAP</span>
-              <h2>
-                One proof point
-                <br />
-                <em>at a time.</em>
-              </h2>
-              <p>
-                Evaluation 1 delivers dual optimization algorithms (Greedy + Local Search), empirical benchmarking,
-                SKU explainability, order route simulation, and comprehensive audit CSV exports.
-              </p>
-              <button className="outline-button" onClick={() => scrollToId("control")} type="button">
-                Re-open control center <ArrowRight size={15} />
-              </button>
-            </div>
-            <div className="roadmap-list">
-              <div className="roadmap-item delivered">
-                <div className="roadmap-marker">
-                  <Check size={14} />
-                </div>
-                <div>
-                  <span>NOW · EVALUATION 01</span>
-                  <strong>Dual Solver + Local Search + Benchmarking</strong>
-                  <p>
-                    Deterministic greedy slotting, 2-opt pairwise swap local search, head-to-head empirical benchmark,
-                    SKU assignment explainer, order route simulation, and audit report CSV.
-                  </p>
-                </div>
-                <StatusPill tone="green">delivered</StatusPill>
-              </div>
-              <div className="roadmap-item">
-                <div className="roadmap-marker">02</div>
-                <div>
-                  <span>UP NEXT · EVALUATION 02</span>
-                  <strong>Advanced Operations Research</strong>
-                  <p>
-                    Graph-based aisle routing network, OR-Tools CP-SAT exact formulation, simulated annealing, and multi-zone pick batches.
-                  </p>
-                </div>
-                <StatusPill>planned</StatusPill>
-              </div>
-              <div className="roadmap-item">
-                <div className="roadmap-marker">03</div>
-                <div>
-                  <span>FINAL SYSTEM</span>
-                  <strong>Continuous Decision Intelligence</strong>
-                  <p>
-                    WMS ERP integrations, multi-depot topologies, dynamic slot replenishment, and warehouse supervisor workflow.
-                  </p>
-                </div>
-                <StatusPill>planned</StatusPill>
-              </div>
-            </div>
-          </div>
-        </section>
       </main>
 
       <footer className="site-footer">

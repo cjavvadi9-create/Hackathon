@@ -12,6 +12,8 @@
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "db:migrate": "drizzle-kit migrate",
+    "db:check": "tsx server/db-connectivity.ts",
+    "db:status": "tsx server/db-status.ts",
     "dev:static": "vite --host 0.0.0.0 --port ${PORT:-3000} --strictPort",
     "build:static": "vite build"
   },
@@ -54,6 +56,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "cookie": "^1.0.2",
+    "cross-env": "^10.1.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.2",
     "drizzle-orm": "^0.44.5",

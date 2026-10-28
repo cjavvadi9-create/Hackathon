@@ -51,4 +51,7 @@ describe("current platform integration", () => {
     vi.stubEnv("MANUS_PROJECT_ID", "different-project");
     expect(await sdk.verifySession(token)).toBeNull();
   });
+  it("treats a missing session cookie as an anonymous request", async () => {
+    await expect(sdk.verifySession(undefined)).resolves.toBeNull();
+  });
 });

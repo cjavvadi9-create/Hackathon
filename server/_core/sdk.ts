@@ -1,5 +1,9 @@
 import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS, decodeOAuthState } from "@shared/const";
-import { ForbiddenError } from "@shared/_core/errors";
+import {
+  AuthServiceUnavailableError,
+  ForbiddenError,
+  UserStorageUnavailableError,
+} from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
@@ -30,7 +34,7 @@ const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserI
 
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
+    console.log("[OAuth] Initialized. OAuth API URL configured:", Boolean(ENV.oAuthServerUrl));
     if (!ENV.oAuthServerUrl) {
       console.error(
         "[OAuth] ERROR: MANUS_OAUTH_API_URL is not configured! Set MANUS_OAUTH_API_URL environment variable."
@@ -46,6 +50,7 @@ class OAuthService {
     code: string,
     state: string
   ): Promise<ExchangeTokenResponse> {
+    this.ensureConfigured();
     const payload: ExchangeTokenRequest = {
       clientId: ENV.appId,
       grantType: "authorization_code",
@@ -64,6 +69,7 @@ class OAuthService {
   async getUserInfoByToken(
     token: ExchangeTokenResponse
   ): Promise<GetUserInfoResponse> {
+    this.ensureConfigured();
     const { data } = await this.client.post<GetUserInfoResponse>(
       GET_USER_INFO_PATH,
       {
@@ -72,6 +78,12 @@ class OAuthService {
     );
 
     return data;
+  }
+
+  private ensureConfigured() {
+    if (!ENV.oAuthServerUrl || !ENV.appId) {
+      throw new AuthServiceUnavailableError("configuration");
+    }
   }
 }
 
@@ -88,6 +100,16 @@ class SDKServer {
   constructor(client: AxiosInstance = createOAuthHttpClient()) {
     this.client = client;
     this.oauthService = new OAuthService(this.client);
+  }
+
+  private async withUserStorage<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch {
+      // Avoid forwarding database driver details, which can include connection
+      // metadata, through the authentication middleware.
+      throw new UserStorageUnavailableError();
+    }
   }
 
   private deriveLoginMethod(
@@ -155,7 +177,7 @@ class SDKServer {
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
-    if (!secret) throw new Error("MANUS_JWT_SECRET is unavailable");
+    if (!secret) throw new AuthServiceUnavailableError("configuration");
     return new TextEncoder().encode(secret);
   }
 
@@ -201,8 +223,15 @@ class SDKServer {
     cookieValue: string | undefined | null
   ): Promise<{ openId: string; appId: string; name: string } | null> {
     if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
+      // Anonymous requests to public procedures are expected; do not log each
+      // one as an authentication warning.
       return null;
+    }
+
+    // Missing server configuration is an operational error, not an invalid
+    // user session. Keep it distinguishable from a genuinely expired token.
+    if (!ENV.cookieSecret || !ENV.appId) {
+      throw new AuthServiceUnavailableError("configuration");
     }
 
     try {
@@ -235,6 +264,9 @@ class SDKServer {
   async getUserInfoWithJwt(
     jwtToken: string
   ): Promise<GetUserInfoWithJwtResponse> {
+    if (!ENV.oAuthServerUrl || !ENV.appId) {
+      throw new AuthServiceUnavailableError("configuration");
+    }
     const payload: GetUserInfoWithJwtRequest = {
       jwtToken,
       projectId: ENV.appId,
@@ -283,7 +315,13 @@ class SDKServer {
     }
 
     if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
-      const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+      let userInfo: GetUserInfoWithJwtResponse;
+      try {
+        userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+      } catch (error) {
+        if (error instanceof AuthServiceUnavailableError) throw error;
+        throw new AuthServiceUnavailableError("provider");
+      }
       const taskUid = userInfo.taskUid ?? null;
       if (!taskUid) {
         throw ForbiddenError("Cron session missing task_uid");
@@ -293,34 +331,37 @@ class SDKServer {
 
     const sessionUserId = session.openId;
     const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
+    let user = await this.withUserStorage(() => db.getUserByOpenId(sessionUserId));
 
     // If user not in DB, sync from OAuth server automatically
     if (!user) {
+      let userInfo: GetUserInfoWithJwtResponse;
       try {
-        const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
+        userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
       } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
+        if (error instanceof AuthServiceUnavailableError) throw error;
+        throw new AuthServiceUnavailableError("provider");
       }
+      // Keep database failures outside the provider catch so the HTTP layer
+      // can report storage trouble distinctly from an OAuth outage.
+      await this.withUserStorage(() => db.upsertUser({
+        openId: userInfo.openId,
+        name: userInfo.name || null,
+        email: userInfo.email ?? null,
+        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+        lastSignedIn: signedInAt,
+      }));
+      user = await this.withUserStorage(() => db.getUserByOpenId(userInfo.openId));
     }
 
     if (!user) {
       throw ForbiddenError("User not found");
     }
 
-    await db.upsertUser({
+    await this.withUserStorage(() => db.upsertUser({
       openId: user.openId,
       lastSignedIn: signedInAt,
-    });
+    }));
 
     return user;
   }

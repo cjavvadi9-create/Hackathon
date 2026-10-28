@@ -1,4 +1,11 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
+import { TRPCError } from "@trpc/server";
+import type { Request } from "express";
+import {
+  AuthServiceUnavailableError,
+  HttpError,
+  UserStorageUnavailableError,
+} from "@shared/_core/errors";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
 
@@ -8,21 +15,45 @@ export type TrpcContext = {
   user: User | null;
 };
 
-export async function createContext(
-  opts: CreateExpressContextOptions
-): Promise<TrpcContext> {
-  let user: User | null = null;
+type RequestAuthenticator = (req: Request) => Promise<User | null>;
 
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    // Authentication is optional for public procedures.
-    user = null;
-  }
+export function createContextFactory(authenticate: RequestAuthenticator) {
+  return async (opts: CreateExpressContextOptions): Promise<TrpcContext> => {
+    let user: User | null = null;
 
-  return {
-    req: opts.req,
-    res: opts.res,
-    user,
+    try {
+      user = await authenticate(opts.req);
+    } catch (error) {
+      // An absent/invalid session is expected for public tRPC procedures.
+      if (error instanceof HttpError && (error.statusCode === 401 || error.statusCode === 403)) {
+        user = null;
+      } else if (error instanceof AuthServiceUnavailableError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.kind === "configuration"
+            ? "Authentication is not configured. Check MANUS_PROJECT_ID, MANUS_OAUTH_API_URL, and MANUS_JWT_SECRET."
+            : "The authentication service is unavailable. Try signing in again later.",
+        });
+      } else if (error instanceof UserStorageUnavailableError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "User storage is unavailable. Check the server database connection.",
+        });
+      } else {
+        // Do not include unexpected error details or credentials in responses.
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Unable to verify this session. Try signing in again.",
+        });
+      }
+    }
+
+    return {
+      req: opts.req,
+      res: opts.res,
+      user,
+    };
   };
 }
+
+export const createContext = createContextFactory(req => sdk.authenticateRequest(req));

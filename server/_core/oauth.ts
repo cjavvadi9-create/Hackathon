@@ -1,4 +1,5 @@
 import { COOKIE_NAME, ONE_YEAR_MS, OAUTH_STATE_COOKIE, decodeOAuthState } from "@shared/const";
+import { AuthServiceUnavailableError, UserStorageUnavailableError } from "@shared/_core/errors";
 import { parse as parseCookieHeader } from "cookie";
 import type { Express, Request, Response } from "express";
 import * as db from "../db";
@@ -40,13 +41,17 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      await db.upsertUser({
-        openId: userInfo.openId,
-        name: userInfo.name || null,
-        email: userInfo.email ?? null,
-        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-        lastSignedIn: new Date(),
-      });
+      try {
+        await db.upsertUser({
+          openId: userInfo.openId,
+          name: userInfo.name || null,
+          email: userInfo.email ?? null,
+          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+          lastSignedIn: new Date(),
+        });
+      } catch {
+        throw new UserStorageUnavailableError();
+      }
 
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
@@ -58,8 +63,21 @@ export function registerOAuthRoutes(app: Express) {
 
       res.redirect(302, "/");
     } catch (error) {
-      console.error("[OAuth] Callback failed", error instanceof Error ? error.message : "unknown error");
-      res.status(500).json({ error: "OAuth callback failed" });
+      // Keep credentials and provider/driver details out of logs and responses.
+      console.warn("[OAuth] Callback failed while completing sign-in.");
+      if (error instanceof AuthServiceUnavailableError) {
+        res.status(503).json({
+          error: error.kind === "configuration"
+            ? "Authentication is not configured. Check MANUS_PROJECT_ID, MANUS_OAUTH_API_URL, and MANUS_JWT_SECRET."
+            : "The authentication service is unavailable. Try signing in again later.",
+        });
+        return;
+      }
+      if (error instanceof UserStorageUnavailableError) {
+        res.status(503).json({ error: "User storage is unavailable. Check the server database connection." });
+        return;
+      }
+      res.status(401).json({ error: "OAuth sign-in could not be completed. Restart sign-in and try again." });
     }
   });
 }

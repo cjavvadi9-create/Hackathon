@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { TRPCClientError } from "@trpc/client";
-import { makeSampleData, optimize } from "./optimizer";
-import { apiQueryState, completedRunResult, createOptimizationInput, createWarehouseAndRefresh, importAndRefresh, latestCompletedRunId, runAndRefresh, runsOnBackend, trpcErrorMessage, workspaceSourceLabel } from "./workspace";
+import { assignmentCsv, computeOrderRoute, explainSku, exportRunCsv, getOrderIds, makeSampleData, optimize, runBenchmark } from "./optimizer";
+import { apiQueryState, completedRunResult, createDemoWorkspaceState, createOptimizationInput, createWarehouseAndRefresh, importAndRefresh, latestCompletedRunId, runAndRefresh, runLocalOptimization, runsOnBackend, trpcErrorMessage, workspaceSourceLabel } from "./workspace";
 
 const weights = { travelWeight: 0.55, cooccurrenceWeight: 0.25, demandWeight: 0.2 };
 
@@ -90,6 +90,48 @@ describe("frontend workspace API helpers", () => {
     expect(workspaceSourceLabel("demo")).toContain("Synthetic demo");
     expect(workspaceSourceLabel("draft")).toContain("not saved");
     expect(workspaceSourceLabel("persisted")).toContain("backend");
+  });
+
+  it("activates and resets the demo workspace before running both algorithms and dependent features", () => {
+    const data = makeSampleData();
+    const localWeights = { travelWeight: 0.55, cooccurrenceWeight: 0.25, demandWeight: 0.2 };
+    const reset = createDemoWorkspaceState(data);
+    const greedy = runLocalOptimization(data, "greedy", localWeights, 500);
+    const localSearch = reset.run;
+
+    expect(runsOnBackend("demo")).toBe(false);
+    expect(reset).toMatchObject({
+      data,
+      dataSource: "demo",
+      scrollTarget: "datasets",
+      selectedDatasetVersionId: null,
+      selectedRunId: null,
+      selectedSkuId: null,
+      selectedAlgo: "local_search",
+      maxIterations: 500,
+      activeDataset: "layout",
+      mapMode: "optimized",
+      selectedLocation: data.layout[0]!.location_id,
+      selectedOrderId: getOrderIds(data)[0],
+      benchmark: null,
+      notice: expect.stringContaining("36 locations, 36 SKUs, 120 sample orders"),
+    });
+    expect(data.layout).toHaveLength(36);
+    expect(data.skus).toHaveLength(36);
+    expect(new Set(data.orders.map((order) => order.order_id)).size).toBe(120);
+    for (const run of [greedy, localSearch]) {
+      expect(run.validation.valid).toBe(true);
+      expect(run.assignments).toHaveLength(data.skus.length);
+      expect(run.optimized.constraintViolations).toBe(0);
+      expect(assignmentCsv(run)).toContain("sku_id");
+      expect(exportRunCsv(run)).toContain("total_distance");
+    }
+
+    expect(explainSku(data, localSearch, data.skus[0]!.sku_id)).not.toBeNull();
+    expect(computeOrderRoute(data, localSearch, getOrderIds(data)[0]!)).not.toBeNull();
+    const comparison = runBenchmark(data);
+    expect(comparison.greedy.feasible).toBe(true);
+    expect(comparison.localSearch.feasible).toBe(true);
   });
 
   it("shows safe API failures without inventing details", () => {
