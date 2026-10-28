@@ -9,9 +9,9 @@ import {
   warehouses,
   type OptimizationParameters,
   type RouteAssumptions,
-} from "../drizzle/schema";
+} from "../drizzle/schema.js";
 import type { Assignment, OptimizationRun, RunMetrics, ValidationReport } from "../client/src/lib/optimizer";
-import { getDb } from "./db";
+import { getDb } from "./db.js";
 
 type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type DatabaseProvider = () => Promise<Database | null>;

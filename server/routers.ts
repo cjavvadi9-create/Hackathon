@@ -1,19 +1,19 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import type { OptimizationParameters } from "../drizzle/schema";
-import { COOKIE_NAME } from "@shared/const";
-import { validateDataset, type DatasetBundle } from "../client/src/lib/optimizer";
-import { getSessionCookieOptions } from "./_core/cookies";
-import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { DatabaseUnavailableError, WarehouseNotFoundError, warehouseRepository, type WarehouseRepository } from "./warehouse-repository";
+import { COOKIE_NAME } from "../shared/const.js";
+import { validateDataset, type DatasetBundle } from "../client/src/lib/optimizer.js";
+import { getSessionCookieOptions } from "./_core/cookies.js";
+import { systemRouter } from "./_core/systemRouter.js";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc.js";
+import { DatabaseUnavailableError, WarehouseNotFoundError, warehouseRepository, type WarehouseRepository } from "./warehouse-repository.js";
 import {
   DatasetVersionUnavailableError,
   OptimizationExecutionError,
   OptimizationValidationError,
   optimizationService,
   type OptimizationService,
-} from "./optimization-service";
+} from "./optimization-service.js";
 
 const MAX_WAREHOUSE_NAME_LENGTH = 191;
 const MAX_LOCATION_ROWS = 10_000;

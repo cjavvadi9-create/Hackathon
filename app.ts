@@ -1,6 +1,6 @@
 import express from "express";
 import path from "node:path";
-import { registerApplicationRoutes } from "./server/_core/app";
+import { registerApplicationRoutes } from "./server/_core/app.js";
 
 // Vercel invokes this exported Express application as a serverless function.
 // Vite's build command writes the SPA to root public/, which Vercel serves via

@@ -7,9 +7,9 @@ import {
   warehouseLocations,
   warehouses,
   type DatasetValidationSnapshot,
-} from "../drizzle/schema";
+} from "../drizzle/schema.js";
 import type { DatasetBundle, Location, Order, Sku } from "../client/src/lib/optimizer";
-import { getDb } from "./db";
+import { getDb } from "./db.js";
 
 const INSERT_BATCH_SIZE = 500;
 type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;

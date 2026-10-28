@@ -8,16 +8,16 @@ import {
   type DatasetBundle,
   type OptimizationRun,
   type ValidationReport,
-} from "../client/src/lib/optimizer";
+} from "../client/src/lib/optimizer.js";
 import type { OptimizationParameters, RouteAssumptions } from "../drizzle/schema";
-import { warehouseRepository } from "./warehouse-repository";
+import { warehouseRepository } from "./warehouse-repository.js";
 import {
   optimizationRepository,
   type OptimizationAlgorithmKey,
   type OptimizationRepository,
   type RecoverStaleRunsInput,
   type PersistedOptimizationRun,
-} from "./optimization-repository";
+} from "./optimization-repository.js";
 
 export class DatasetVersionUnavailableError extends Error {
   constructor() {

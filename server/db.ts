@@ -2,9 +2,9 @@ import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool } from "mysql2";
-import { InsertUser, users } from "../drizzle/schema";
-import { ENV } from './_core/env';
-import { mysqlConnectionSettings } from "./mysql-config";
+import { InsertUser, users } from "../drizzle/schema.js";
+import { ENV } from './_core/env.js';
+import { mysqlConnectionSettings } from "./mysql-config.js";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 

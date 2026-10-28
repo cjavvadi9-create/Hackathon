@@ -1,7 +1,7 @@
 import "dotenv/config";
-import { createApplication } from "./app";
+import { createApplication } from "./app.js";
 import { createServer } from "http";
-import { serveStatic, setupVite } from "./vite";
+import { serveStatic, setupVite } from "./vite.js";
 
 async function startServer() {
   const app = createApplication();

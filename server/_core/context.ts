@@ -5,9 +5,9 @@ import {
   AuthServiceUnavailableError,
   HttpError,
   UserStorageUnavailableError,
-} from "@shared/_core/errors";
+} from "../../shared/_core/errors.js";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
+import { sdk } from "./sdk.js";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
