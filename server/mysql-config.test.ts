@@ -9,7 +9,12 @@ describe("MySQL connection configuration", () => {
 
     expect(settings.uri).not.toContain("ssl-mode");
     expect(settings.uri).toContain("connectTimeout=5000");
-    expect(settings.ssl).toEqual({ rejectUnauthorized: true, verifyIdentity: true });
+   expect(settings.ssl).toMatchObject({
+  rejectUnauthorized: true,
+  verifyIdentity: true,
+});
+
+expect(settings.ssl.ca).toBeTruthy();
   });
 
   it("normalizes an optional CA certificate from environment-style PEM text", () => {
